@@ -126,6 +126,7 @@
   .mini button{background:transparent;border:1px solid var(--hair);padding:6px 9px;cursor:pointer;
     font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
   .mini button:hover{border-color:var(--fg);color:var(--fg)}
+  .tacts{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
   .empty{padding:36px 0;text-align:center;color:var(--muted);font-size:14px}
   /* menú de 3 puntitos (acciones VIP desde el turno) */
   .menuwrap{position:relative;display:inline-flex}
@@ -277,8 +278,12 @@
   .sdetail b{display:block;font-family:var(--serif);font-size:19px;font-weight:700;
     letter-spacing:0;text-transform:none;color:var(--fg);margin-top:2px}
   .sdetail b.gan{color:var(--dollar)}
-  @media(max-width:560px){.srow{grid-template-columns:1fr 52px 76px 76px 20px;gap:6px}
-    .sdetail{gap:16px}}
+  @media(max-width:560px){
+    /* el nombre ocupa una línea entera (legible); abajo cant/costo/venta/flecha */
+    .srow{grid-template-columns:56px 1fr 1fr 24px;gap:6px}
+    .srow>*:first-child{grid-column:1/-1}
+    .sdetail{gap:16px}
+  }
 
   /* horarios */
   .days{display:flex;gap:6px;flex-wrap:wrap}
@@ -327,6 +332,17 @@
   .gate input{width:100%;text-align:center;letter-spacing:.2em;margin-bottom:12px}
   .gate .btn{width:100%;justify-content:center}
   .gate .hint{margin-top:14px;font-size:11px;color:var(--muted)}
+
+  /* ===== MOBILE (al final para ganar la cascada): nada se desborda del marco ===== */
+  @media(max-width:640px){
+    .slot{grid-template-columns:46px 1fr}
+    .slot .tacts{grid-column:1/-1;justify-content:flex-end;padding-top:2px}
+    .mini{flex-wrap:wrap;justify-content:flex-end}
+    .mini button{padding:6px 8px}
+    .crow{grid-template-columns:1fr;gap:8px}
+    .cacts{justify-content:flex-start}
+    .fact .split{flex-direction:column;gap:14px}
+  }
 </style>
 
 <!-- ===== LOGIN (demo) ===== -->
@@ -661,7 +677,7 @@ var K = { cfg:"uni_cfg", serv:"uni_serv", prod:"uni_prod", turnos:"uni_turnos", 
 var read = function(k,f){ try{ var v=JSON.parse(LS.getItem(k)); return v==null?f:v; }catch(e){ return f; } };
 var write = function(k,v){ LS.setItem(k, JSON.stringify(v)); };
 var uid = function(){ return "u"+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36); };
-var money = function(n){ return "$ "+ (n||0).toLocaleString("es-AR"); };
+var money = function(n){ return "$ "+ (n||0).toLocaleString("es-AR"); }; // espacio no separable: el $ nunca queda solo en otra línea
 var atDay = function(off,h,m){ var d=new Date(); d.setDate(d.getDate()+off); d.setHours(h,m||0,0,0); return d.toISOString(); };
 var justNow = function(){ return new Date().toISOString(); }; // cobro "de hoy" para el demo (siempre <= ahora)
 var iso = function(d){ var z=new Date(d.getTime()-d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); }; // fecha LOCAL, no UTC
@@ -995,7 +1011,7 @@ function turnoRow(t,cls){
   var vipTag=yaVip?'<span class="viptag--mini">VIP</span>':"";
   var bono=t.vipConsumed?" · corte con bono VIP":"";
   return '<span class="who">'+t.nombre+vipTag+'<small>'+servName(t.servId)+tel+bono+'</small></span>'+
-    '<span style="display:flex;gap:8px;align-items:center"><span class="pill pill--'+cls+'">'+t.estado+'</span>'+acts+'</span>';
+    '<span class="tacts"><span class="pill pill--'+cls+'">'+t.estado+'</span>'+acts+'</span>';
 }
 
 function renderTurnos(){
