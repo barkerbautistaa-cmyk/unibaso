@@ -620,6 +620,9 @@
           <label class="fld">Agenda hasta (días)<input type="number" id="h_horizon" min="1"></label>
           <button class="btn" onclick="saveHorarios()">Guardar horarios</button>
         </div>
+        <p class="muted" style="font-size:12px;margin:12px 2px 0">Duración + espacio = cada cuánto
+          arranca un turno. Con <b>00:45</b> + <b>00:15</b> los turnos caen siempre en
+          <b>hora en punto</b> (10, 11, 12...).</p>
       </div>
     </section>
 
@@ -699,7 +702,7 @@ var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
 function seed(){
   // Versionado de datos DEMO: al subir DEMO_VER se reemplazan servicios, turnos y ventas
   // guardados por los de ejemplo nuevos (solo etapa demo; se quita al pasar a producción).
-  var DEMO_VER=9;
+  var DEMO_VER=10;
   var demoOld=parseInt(LS.getItem("uni_demover")||"0",10)<DEMO_VER;
   // Un solo servicio: "Corte". El corte es plano, con diseño/barba o no.
   if(!read(K.serv,null) || demoOld) write(K.serv,[
@@ -855,14 +858,15 @@ function seed(){
       d[i]={on:on,f1:on?["10:00","14:00"]:["",""],f2:on?["15:00","20:00"]:["",""]}; }
     return d;
   };
+  // corte 45 + espacio 15 = 60 → los turnos arrancan SIEMPRE en hora en punto (10, 11, 12...)
   if(!read(K.cfg,null)) write(K.cfg,{
-    days:[2,3,4,5,6], dias:defDias(), start:"10:00", end:"20:00", slotMin:60, gapMin:15, horizonDays:14, precioCorte:14000
+    days:[2,3,4,5,6], dias:defDias(), start:"10:00", end:"20:00", slotMin:45, gapMin:15, horizonDays:14, precioCorte:14000
   });
   // completar/forzar precioCorte + duración + gap + dias (demo)
   var _c=read(K.cfg,{});
   if(_c){ var _ch=false;
     if(_c.precioCorte==null || demoOld){ _c.precioCorte=14000; _ch=true; }
-    if(_c.slotMin==null || demoOld){ _c.slotMin=60; _ch=true; }
+    if(_c.slotMin==null || demoOld){ _c.slotMin=45; _ch=true; }
     if(_c.gapMin==null || demoOld){ _c.gapMin=15; _ch=true; }
     if(demoOld){ _c.dias=defDias(); _c.days=[2,3,4,5,6]; _ch=true; }
     else if(_c.dias==null){ // migrar config vieja: franja única global → por día
@@ -877,27 +881,27 @@ function seed(){
   var nextDow=function(dow,h,m){ var d=new Date(); d.setHours(h,m||0,0,0);
     d.setDate(d.getDate()+((dow-d.getDay()+7)%7)); return d.toISOString(); };
   if(!read(K.turnos,null) || demoOld){ var _tur=[
-    // Martes: 4 turnos (uno realizado, para ver el botón Borrar) — cada 1h15 (1h corte + 15min), seguidos
+    // Martes: 4 turnos (uno realizado, para ver el botón Borrar) — SIEMPRE en hora en punto
     {id:uid(),nombre:"Martín Ríos",tel:"5492284611001",servId:"s1",fecha:nextDow(2,10,0),estado:"realizado",precio:14000},
-    {id:uid(),nombre:"Lucas Ferreyra",tel:"5492284611002",servId:"s1",fecha:nextDow(2,11,15),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Ezequiel Paz",tel:"5492284611003",servId:"s1",fecha:nextDow(2,12,30),estado:"pendiente",precio:14000},
-    {id:uid(),nombre:"Franco Díaz",tel:"5492284611009",servId:"s1",fecha:nextDow(2,13,45),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Lucas Ferreyra",tel:"5492284611002",servId:"s1",fecha:nextDow(2,11,0),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Ezequiel Paz",tel:"5492284611003",servId:"s1",fecha:nextDow(2,12,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Franco Díaz",tel:"5492284611009",servId:"s1",fecha:nextDow(2,13,0),estado:"confirmado",precio:14000},
     // Miércoles: un solo turno
-    {id:uid(),nombre:"Tomás Vidal",tel:"5492284611007",servId:"s1",fecha:nextDow(3,16,15),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Tomás Vidal",tel:"5492284611007",servId:"s1",fecha:nextDow(3,16,0),estado:"confirmado",precio:14000},
     // Jueves: 3 turnos
     {id:uid(),nombre:"Iván Molina",tel:"5492284611008",servId:"s1",fecha:nextDow(4,10,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s1",fecha:nextDow(4,11,15),estado:"pendiente",precio:14000},
-    {id:uid(),nombre:"Bruno Vera",tel:"5492284611005",servId:"s1",fecha:nextDow(4,12,30),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s1",fecha:nextDow(4,11,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Bruno Vera",tel:"5492284611005",servId:"s1",fecha:nextDow(4,12,0),estado:"confirmado",precio:14000},
     // Viernes: 5 turnos
     {id:uid(),nombre:"Nahuel Sosa",tel:"5492284611006",servId:"s1",fecha:nextDow(5,10,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Agustín Rey",tel:"5492284611010",servId:"s1",fecha:nextDow(5,11,15),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Marcos Peña",tel:"5492284611011",servId:"s1",fecha:nextDow(5,12,30),estado:"pendiente",precio:14000},
-    {id:uid(),nombre:"Santi López",tel:"5492284611012",servId:"s1",fecha:nextDow(5,13,45),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Agustín Rey",tel:"5492284611010",servId:"s1",fecha:nextDow(5,11,0),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Marcos Peña",tel:"5492284611011",servId:"s1",fecha:nextDow(5,12,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Santi López",tel:"5492284611012",servId:"s1",fecha:nextDow(5,13,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Facu Torres",tel:"5492284611013",servId:"s1",fecha:nextDow(5,15,0),estado:"confirmado",precio:14000},
     // Sábado: 3 turnos
     {id:uid(),nombre:"Pedro Aguirre",tel:"5492284611014",servId:"s1",fecha:nextDow(6,10,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Leo Núñez",tel:"5492284611015",servId:"s1",fecha:nextDow(6,11,15),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Dylan Soto",tel:"5492284611016",servId:"s1",fecha:nextDow(6,12,30),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Leo Núñez",tel:"5492284611015",servId:"s1",fecha:nextDow(6,11,0),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Dylan Soto",tel:"5492284611016",servId:"s1",fecha:nextDow(6,12,0),estado:"pendiente",precio:14000},
     // realizados anteriores (historial para filtros de Mensajes y balance)
     {id:uid(),nombre:"Martín Ríos",tel:"5492284611001",servId:"s1",fecha:atDay(-12,17,0),estado:"realizado",precio:8000},
     {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s2",fecha:atDay(-8,18,0),estado:"realizado",precio:10000},
@@ -1632,7 +1636,7 @@ function renderHorarios(){
         '<input type="time" id="d'+i+'f2b" value="'+(d.f2[1]||"")+'"></span>'+
       '</div>';
   }).join("");
-  document.getElementById("h_slot").value=minToHH(c.slotMin||60); // duración como 01:00
+  document.getElementById("h_slot").value=minToHH(c.slotMin||45); // duración como 00:45
   document.getElementById("h_gap").value=minToHH(c.gapMin!=null?c.gapMin:15); // espacio como 00:15
   document.getElementById("h_horizon").value=c.horizonDays||14;
   document.getElementById("h_precio").value=c.precioCorte||14000;
@@ -1654,7 +1658,7 @@ function saveHorarios(){
   var c=getCfg();
   var pc=parseInt(val("h_precio")||"0",10)||c.precioCorte||14000; // preservar el precio del corte
   write(K.cfg,{ days:days, dias:dias, start:c.start||"10:00", end:c.end||"20:00",
-    slotMin:(toMin(val("h_slot"))||60), gapMin:toMin(val("h_gap")), horizonDays:parseInt(val("h_horizon")||"14",10), precioCorte:pc });
+    slotMin:(toMin(val("h_slot"))||45), gapMin:toMin(val("h_gap")), horizonDays:parseInt(val("h_horizon")||"14",10), precioCorte:pc });
   write(K.serv, getServ().map(function(s){ if((s.nombre||"").toLowerCase()==="corte") s.precio=pc; return s; }));
   fillSelects(); renderTurnos();
   alert("Horarios guardados. (El bot de turnos leerá esta config.)");
