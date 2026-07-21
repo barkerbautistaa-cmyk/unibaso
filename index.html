@@ -290,6 +290,17 @@
   .day{border:1px solid var(--hair);padding:9px 13px;cursor:pointer;font-size:12px;
     letter-spacing:.1em;text-transform:uppercase;color:var(--muted);user-select:none}
   .day[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+  /* horarios por día: fila = chip del día + dos franjas (la 2ª opcional) */
+  .hday{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:11px 0;
+    border-top:1px solid var(--hair)}
+  .hday:first-of-type{border-top:0}
+  .hday .day{width:54px;text-align:center;padding:9px 0}
+  .hday .fr{display:flex;gap:6px;align-items:center}
+  .hday .fr input{padding:8px 9px;font-size:13px}
+  .hday .fr .sep{font-size:11px;color:var(--muted);letter-spacing:.08em}
+  .hday .frlbl{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    margin-right:2px}
+  .hday.off .fr{opacity:.35;pointer-events:none}
 
   /* mensajes */
   .contact{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
@@ -585,8 +596,11 @@
     <section class="view" id="view-horarios">
       <div class="view-head"><div><div class="lead">Disponibilidad</div><h2>Horarios</h2></div></div>
       <div class="card">
-        <div class="card-title">Días que atiende</div>
-        <div class="days" id="daysBox"></div>
+        <div class="card-title">Horarios por día — hasta dos franjas</div>
+        <div id="diasBox"></div>
+        <p class="muted" style="font-size:12px;margin:12px 2px 0">Tocá el <b>día</b> para abrirlo o
+          cerrarlo. La <b>segunda franja</b> es opcional: dejala vacía si ese día atendés de corrido
+          (ej: lunes 10 a 14 y 16 a 20, martes solo 10 a 20).</p>
       </div>
       <div class="card">
         <div class="card-title">Precio del corte</div>
@@ -599,10 +613,8 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-title">Franja y turnos</div>
+        <div class="card-title">Duración y agenda</div>
         <div class="formgrid">
-          <label class="fld">Abre<input type="time" id="h_start"></label>
-          <label class="fld">Cierra<input type="time" id="h_end"></label>
           <label class="fld">Duración del corte<input type="time" id="h_slot" step="300"></label>
           <label class="fld">Espacio entre turnos<input type="time" id="h_gap" step="300"></label>
           <label class="fld">Agenda hasta (días)<input type="number" id="h_horizon" min="1"></label>
@@ -687,7 +699,7 @@ var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
 function seed(){
   // Versionado de datos DEMO: al subir DEMO_VER se reemplazan servicios, turnos y ventas
   // guardados por los de ejemplo nuevos (solo etapa demo; se quita al pasar a producción).
-  var DEMO_VER=8;
+  var DEMO_VER=9;
   var demoOld=parseInt(LS.getItem("uni_demover")||"0",10)<DEMO_VER;
   // Un solo servicio: "Corte". El corte es plano, con diseño/barba o no.
   if(!read(K.serv,null) || demoOld) write(K.serv,[
@@ -837,15 +849,27 @@ function seed(){
     write(K.prod,_prods);
     LS.setItem("uni_prodver",String(CATALOGO_VER));
   }
+  // horarios POR DÍA, cada día con hasta DOS franjas (ej: 10-14 y 15-20)
+  var defDias=function(){
+    var d={}; for(var i=0;i<7;i++){ var on=(i>=2&&i<=6); // demo: mar-sáb en doble turno
+      d[i]={on:on,f1:on?["10:00","14:00"]:["",""],f2:on?["15:00","20:00"]:["",""]}; }
+    return d;
+  };
   if(!read(K.cfg,null)) write(K.cfg,{
-    days:[2,3,4,5,6], start:"10:00", end:"20:00", slotMin:60, gapMin:15, horizonDays:14, precioCorte:14000
+    days:[2,3,4,5,6], dias:defDias(), start:"10:00", end:"20:00", slotMin:60, gapMin:15, horizonDays:14, precioCorte:14000
   });
-  // completar/forzar precioCorte + duración + gap (demo)
+  // completar/forzar precioCorte + duración + gap + dias (demo)
   var _c=read(K.cfg,{});
   if(_c){ var _ch=false;
     if(_c.precioCorte==null || demoOld){ _c.precioCorte=14000; _ch=true; }
     if(_c.slotMin==null || demoOld){ _c.slotMin=60; _ch=true; }
     if(_c.gapMin==null || demoOld){ _c.gapMin=15; _ch=true; }
+    if(demoOld){ _c.dias=defDias(); _c.days=[2,3,4,5,6]; _ch=true; }
+    else if(_c.dias==null){ // migrar config vieja: franja única global → por día
+      var dd={}; for(var i=0;i<7;i++){ var on=(_c.days||[]).indexOf(i)>-1;
+        dd[i]={on:on,f1:on?[_c.start||"10:00",_c.end||"20:00"]:["",""],f2:["",""]}; }
+      _c.dias=dd; _ch=true;
+    }
     if(_ch) write(K.cfg,_c);
   }
   // próxima ocurrencia (incluye hoy) de un día de semana dado, a tal hora — así los
@@ -986,6 +1010,23 @@ var OPEN_DAY=null; // día (iso) desplegado en el acordeón
 function toMin(hhmm){ var p=(hhmm||"0:0").split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); }
 function minToHH(m){ var h=Math.floor(m/60), mm=m%60; return (h<10?"0":"")+h+":"+(mm<10?"0":"")+mm; }
 function expandDay(dayIso){ OPEN_DAY=(OPEN_DAY===dayIso)?null:dayIso; renderTurnos(); }
+// config del día (con fallback a la config vieja de franja única global)
+function getDia(dow){
+  var c=getCfg();
+  if(c.dias && c.dias[dow]) return c.dias[dow];
+  var on=(c.days||[]).indexOf(dow)>-1;
+  return {on:on,f1:on?[c.start||"10:00",c.end||"20:00"]:["",""],f2:["",""]};
+}
+// franjas válidas del día en minutos: [[ini,fin],...] — vacío si está cerrado
+function franjasDia(dow){
+  var d=getDia(dow), out=[];
+  if(!d.on) return out;
+  [d.f1,d.f2].forEach(function(f){
+    if(f && f[0] && f[1] && toMin(f[1])>toMin(f[0])) out.push([toMin(f[0]),toMin(f[1])]);
+  });
+  return out;
+}
+function estadoCls(t){ return (t.estado==="realizado"||t.estado==="confirmado")?"ok":"wait"; }
 
 function turnoRow(t,cls){
   var wa=t.tel?'<a class="wa" target="_blank" href="https://wa.me/'+t.tel+'">💬</a>':"";
@@ -1022,7 +1063,7 @@ function renderTurnos(){
   for(var d=0; d<7; d++){
     var day=new Date(today); day.setDate(today.getDate()+d);
     var dayIso=iso(day);
-    var atiende=(cfg.days||[]).indexOf(day.getDay())>-1;
+    var atiende=franjasDia(day.getDay()).length>0;
     var turnos=all.filter(function(t){ return iso(new Date(t.fecha))===dayIso; })
       .sort(function(a,b){ return a.fecha<b.fecha?-1:1; });
     var label=(d===0?"Hoy · ":d===1?"Mañana · ":"")+fmtDia(day);
@@ -1045,22 +1086,38 @@ function renderTurnos(){
           out+='<div class="slot"><span class="sh">'+fmtHora(t.fecha)+'</span>'+turnoRow(t,cls)+'</div>';
         });
       } else {
-        var start=toMin(cfg.start||"10:00"), end=toMin(cfg.end||"20:00"), step=(cfg.slotMin||60)+(cfg.gapMin||0);
-        for(var m=start; m<end; m+=step){
-          var slotTurnos=turnos.filter(function(t){
-            var dt=new Date(t.fecha), tm=dt.getHours()*60+dt.getMinutes();
-            return tm>=m && tm<m+step;
-          });
-          if(slotTurnos.length){
-            slotTurnos.forEach(function(t){
-              var cls=t.estado==="realizado"?"ok":t.estado==="confirmado"?"ok":"wait";
-              out+='<div class="slot"><span class="sh">'+fmtHora(t.fecha)+'</span>'+turnoRow(t,cls)+'</div>';
+        // horario completo del día = sus franjas (una o dos), slot a slot
+        var step=(cfg.slotMin||60)+(cfg.gapMin||0);
+        var rows=[], shown={};
+        franjasDia(day.getDay()).forEach(function(fr){
+          for(var m=fr[0]; m<fr[1]; m+=step){
+            var slotTurnos=turnos.filter(function(t){
+              var dt=new Date(t.fecha), tm=dt.getHours()*60+dt.getMinutes();
+              return tm>=m && tm<m+step;
             });
-          } else {
-            out+='<div class="slot libre"><span class="sh">'+minToHH(m)+'</span>'+
-              '<span class="free">Libre</span><span></span></div>';
+            if(slotTurnos.length){
+              slotTurnos.forEach(function(t){
+                if(shown[t.id]) return;
+                shown[t.id]=1;
+                var dt=new Date(t.fecha);
+                rows.push({min:dt.getHours()*60+dt.getMinutes(),
+                  h:'<div class="slot"><span class="sh">'+fmtHora(t.fecha)+'</span>'+turnoRow(t,estadoCls(t))+'</div>'});
+              });
+            } else {
+              rows.push({min:m,h:'<div class="slot libre"><span class="sh">'+minToHH(m)+'</span>'+
+                '<span class="free">Libre</span><span></span></div>'});
+            }
           }
-        }
+        });
+        // turnos cargados fuera de las franjas (ej: excepción a mano): mostrarlos igual en su horario
+        turnos.forEach(function(t){
+          if(shown[t.id]) return;
+          var dt=new Date(t.fecha);
+          rows.push({min:dt.getHours()*60+dt.getMinutes(),
+            h:'<div class="slot"><span class="sh">'+fmtHora(t.fecha)+'</span>'+turnoRow(t,estadoCls(t))+'</div>'});
+        });
+        rows.sort(function(a,b){return a.min-b.min;});
+        out+=rows.map(function(r){return r.h;}).join("");
       }
       out+='</div>';
     } else if(turnos.length){
@@ -1559,34 +1616,47 @@ function saveProd(id,field,value){
    HORARIOS
    ============================================================ */
 var DOW=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+var ORD=[1,2,3,4,5,6,0]; // mostrar Lun..Dom
 function renderHorarios(){
   var c=getCfg();
-  var box=document.getElementById("daysBox");
-  box.innerHTML=DOW.map(function(n,i){
-    var on=(c.days||[]).indexOf(i)>-1;
-    return '<span class="day" role="button" aria-pressed="'+on+'" onclick="toggleDay('+i+',this)">'+n+'</span>';
+  var box=document.getElementById("diasBox");
+  box.innerHTML=ORD.map(function(i){
+    var d=getDia(i);
+    return '<div class="hday'+(d.on?'':' off')+'" id="hday'+i+'">'+
+      '<span class="day" role="button" aria-pressed="'+d.on+'" onclick="toggleDia('+i+')">'+DOW[i]+'</span>'+
+      '<span class="fr"><span class="frlbl">1ª</span>'+
+        '<input type="time" id="d'+i+'f1a" value="'+(d.f1[0]||"")+'"><span class="sep">a</span>'+
+        '<input type="time" id="d'+i+'f1b" value="'+(d.f1[1]||"")+'"></span>'+
+      '<span class="fr"><span class="frlbl">2ª</span>'+
+        '<input type="time" id="d'+i+'f2a" value="'+(d.f2[0]||"")+'"><span class="sep">a</span>'+
+        '<input type="time" id="d'+i+'f2b" value="'+(d.f2[1]||"")+'"></span>'+
+      '</div>';
   }).join("");
-  document.getElementById("h_start").value=c.start||"10:00";
-  document.getElementById("h_end").value=c.end||"20:00";
   document.getElementById("h_slot").value=minToHH(c.slotMin||60); // duración como 01:00
   document.getElementById("h_gap").value=minToHH(c.gapMin!=null?c.gapMin:15); // espacio como 00:15
   document.getElementById("h_horizon").value=c.horizonDays||14;
   document.getElementById("h_precio").value=c.precioCorte||14000;
 }
-function toggleDay(i,el){
-  var on=el.getAttribute("aria-pressed")==="true";
-  el.setAttribute("aria-pressed", (!on).toString());
+function toggleDia(i){
+  var row=document.getElementById("hday"+i), chip=row.querySelector(".day");
+  var on=chip.getAttribute("aria-pressed")==="true";
+  chip.setAttribute("aria-pressed", (!on).toString());
+  row.classList.toggle("off", on);
 }
 function saveHorarios(){
-  var days=[];
-  document.querySelectorAll("#daysBox .day").forEach(function(el,i){
-    if(el.getAttribute("aria-pressed")==="true") days.push(i);
+  var dias={}, days=[];
+  ORD.forEach(function(i){
+    var chip=document.querySelector("#hday"+i+" .day");
+    var on=chip.getAttribute("aria-pressed")==="true";
+    dias[i]={on:on, f1:[val("d"+i+"f1a"),val("d"+i+"f1b")], f2:[val("d"+i+"f2a"),val("d"+i+"f2b")]};
+    if(on) days.push(i);
   });
-  var pc=parseInt(val("h_precio")||"0",10)||getCfg().precioCorte||14000; // preservar el precio del corte
-  write(K.cfg,{ days:days, start:val("h_start"), end:val("h_end"),
+  var c=getCfg();
+  var pc=parseInt(val("h_precio")||"0",10)||c.precioCorte||14000; // preservar el precio del corte
+  write(K.cfg,{ days:days, dias:dias, start:c.start||"10:00", end:c.end||"20:00",
     slotMin:(toMin(val("h_slot"))||60), gapMin:toMin(val("h_gap")), horizonDays:parseInt(val("h_horizon")||"14",10), precioCorte:pc });
   write(K.serv, getServ().map(function(s){ if((s.nombre||"").toLowerCase()==="corte") s.precio=pc; return s; }));
-  fillSelects();
+  fillSelects(); renderTurnos();
   alert("Horarios guardados. (El bot de turnos leerá esta config.)");
 }
 
