@@ -164,6 +164,13 @@
   .slot .free{color:var(--muted);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
   .slot .who{font-size:14px}
   .slot .who small{display:block;color:var(--muted);font-size:12px}
+  /* "Más adelante": turnos a más de 7 días, con fecha y día exactos */
+  .futblock{margin-top:18px}
+  .futblock .dayhead:hover{background:transparent}
+  .fslot{grid-template-columns:92px 1fr auto}
+  .fwhen{display:flex;flex-direction:column;line-height:1.05;gap:1px}
+  .fwhen .fd{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  .fwhen .fh{font-family:var(--serif);font-size:17px;font-weight:700}
 
   /* filas de ventas (cliente/producto/total + financiación en cuotas) */
   .vrow{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:15px 0;
@@ -347,6 +354,7 @@
   /* ===== MOBILE (al final para ganar la cascada): nada se desborda del marco ===== */
   @media(max-width:640px){
     .slot{grid-template-columns:46px 1fr}
+    .fslot{grid-template-columns:96px 1fr}
     .slot .tacts{grid-column:1/-1;justify-content:flex-end;padding-top:2px}
     .mini{flex-wrap:wrap;justify-content:flex-end}
     .mini button{padding:6px 8px}
@@ -702,7 +710,7 @@ var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
 function seed(){
   // Versionado de datos DEMO: al subir DEMO_VER se reemplazan servicios, turnos y ventas
   // guardados por los de ejemplo nuevos (solo etapa demo; se quita al pasar a producción).
-  var DEMO_VER=10;
+  var DEMO_VER=11;
   var demoOld=parseInt(LS.getItem("uni_demover")||"0",10)<DEMO_VER;
   // Un solo servicio: "Corte". El corte es plano, con diseño/barba o no.
   if(!read(K.serv,null) || demoOld) write(K.serv,[
@@ -902,6 +910,9 @@ function seed(){
     {id:uid(),nombre:"Pedro Aguirre",tel:"5492284611014",servId:"s1",fecha:nextDow(6,10,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Leo Núñez",tel:"5492284611015",servId:"s1",fecha:nextDow(6,11,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Dylan Soto",tel:"5492284611016",servId:"s1",fecha:nextDow(6,12,0),estado:"pendiente",precio:14000},
+    // turnos a más de 7 días (aparecen en "Más adelante", debajo del acordeón semanal)
+    {id:uid(),nombre:"Lautaro Vega",tel:"5492284611017",servId:"s1",fecha:atDay(10,11,0),estado:"confirmado",precio:14000},
+    {id:uid(),nombre:"Ramiro Duarte",tel:"5492284611018",servId:"s1",fecha:atDay(16,16,0),estado:"pendiente",precio:14000},
     // realizados anteriores (historial para filtros de Mensajes y balance)
     {id:uid(),nombre:"Martín Ríos",tel:"5492284611001",servId:"s1",fecha:atDay(-12,17,0),estado:"realizado",precio:8000},
     {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s2",fecha:atDay(-8,18,0),estado:"realizado",precio:10000},
@@ -1131,6 +1142,19 @@ function renderTurnos(){
       }).join("")+'</div>';
     }
     out+='</div>';
+  }
+  // turnos a MÁS de 7 días: no entran al acordeón semanal → lista aparte con fecha y día exactos
+  var lim=new Date(today); lim.setDate(today.getDate()+7);
+  var lejanos=all.filter(function(t){ return new Date(t.fecha)>=lim; })
+    .sort(function(a,b){ return a.fecha<b.fecha?-1:1; });
+  if(lejanos.length){
+    out+='<div class="dayblock futblock"><div class="dayhead" style="cursor:default">'+
+      '<span><span class="dn">Más adelante</span><div class="dc">'+lejanos.length+
+      (lejanos.length===1?' turno':' turnos')+' a más de 7 días</div></span></div>'+
+      '<div class="dayfull">'+lejanos.map(function(t){
+        return '<div class="slot fslot"><span class="fwhen"><span class="fd">'+fmtDia(t.fecha)+'</span>'+
+          '<b class="fh">'+fmtHora(t.fecha)+'</b></span>'+turnoRow(t,estadoCls(t))+'</div>';
+      }).join("")+'</div></div>';
   }
   el.innerHTML=out;
 }
