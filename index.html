@@ -214,6 +214,29 @@
   .kpi .kk{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
   .kpi .vv{font-family:var(--serif);font-size:26px;margin-top:6px}
 
+  /* historial mes a mes (vista Año) */
+  .hist-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;
+    flex-wrap:wrap;margin-bottom:16px}
+  .yearnav{display:flex;align-items:center;gap:12px}
+  .yearnav button{background:transparent;border:1px solid var(--hair);width:32px;height:32px;
+    cursor:pointer;font-size:18px;line-height:1;color:var(--fg);display:grid;place-items:center}
+  .yearnav button:hover{border-color:var(--fg)}
+  .yearnav b{font-size:22px;font-weight:700;min-width:64px;text-align:center}
+  .histtot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding-bottom:14px;margin-bottom:12px;border-bottom:1px solid var(--hair-strong)}
+  .histtot .lbl{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .histtot .amt{font-family:var(--serif);font-weight:700;color:var(--dollar);
+    font-size:clamp(26px,6vw,36px);line-height:1}
+  .mbar{display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center;padding:6px 0}
+  .mbar .mm{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .mbar .track{height:14px;background:var(--raise);border:1px solid var(--hair);position:relative}
+  .mbar .fillb{position:absolute;left:0;top:0;bottom:0;background:var(--dollar);opacity:.85;min-width:2px}
+  .mbar.zero .fillb{display:none}
+  .mbar .amt{font-family:var(--serif);font-size:15px;font-weight:700;justify-self:end;
+    white-space:nowrap;font-variant-numeric:tabular-nums}
+  .mbar.zero .amt{color:var(--muted);font-weight:400}
+  .mbar.actual .mm{color:var(--fg)}
+
   /* VIP (tarjetas de membresía) */
   .vipcard{border:1px solid var(--hair);border-left:3px solid var(--muted);background:var(--surface);
     padding:16px 18px;margin-bottom:12px}
@@ -574,6 +597,7 @@
           <button aria-pressed="true" onclick="setPeriod('hoy',this)">Hoy</button>
           <button aria-pressed="false" onclick="setPeriod('semana',this)">Semana</button>
           <button aria-pressed="false" onclick="setPeriod('mes',this)">Mes</button>
+          <button aria-pressed="false" onclick="setPeriod('anio',this)">Año</button>
         </div>
       </div>
 
@@ -592,6 +616,22 @@
         <div class="kpi"><div class="kk">Ventas del período</div><div class="vv tnum" id="kVentasN">0</div></div>
         <div class="kpi"><div class="kk">Facturación bruta</div><div class="vv tnum" id="kBruto">$ 0</div></div>
         <div class="kpi"><div class="kk">Por cobrar (cuotas)</div><div class="vv tnum" id="kPorCobrar">$ 0</div></div>
+      </div>
+
+      <!-- Historial mes a mes (solo en vista Año) -->
+      <div class="card hidden" id="anioHist" style="margin-top:16px">
+        <div class="hist-head">
+          <div>
+            <div class="card-title" style="margin-bottom:2px">Historial mes a mes</div>
+            <span class="muted" style="font-size:12px">Ganancia de cada mes · total del año</span>
+          </div>
+          <div class="yearnav">
+            <button onclick="cambiarAnio(-1)" aria-label="Año anterior">‹</button>
+            <b id="histYear" class="serif">2026</b>
+            <button onclick="cambiarAnio(1)" aria-label="Año siguiente">›</button>
+          </div>
+        </div>
+        <div id="histBars"></div>
       </div>
     </section>
 
@@ -738,7 +778,7 @@ var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
 function seed(){
   // Versionado de datos DEMO: al subir DEMO_VER se reemplazan servicios, turnos y ventas
   // guardados por los de ejemplo nuevos (solo etapa demo; se quita al pasar a producción).
-  var DEMO_VER=12;
+  var DEMO_VER=13;
   var demoOld=parseInt(LS.getItem("uni_demover")||"0",10)<DEMO_VER;
   // Un solo servicio: "Corte". El corte es plano, con diseño/barba o no.
   if(!read(K.serv,null) || demoOld) write(K.serv,[
@@ -955,6 +995,13 @@ function seed(){
     {id:uid(),nombre:"Bruno Vera",tel:"5492284611005",servId:"s3",fecha:atDay(-35,19,0),estado:"realizado",precio:5000},
     {id:uid(),nombre:"Nahuel Sosa",tel:"5492284611006",servId:"s1",fecha:atDay(-45,11,0),estado:"realizado",precio:8000}
   ];
+  // historial demo: realizados repartidos en meses anteriores (para que la vista Año muestre movimiento)
+  var histNombres=["Martín Ríos","Lucas Ferreyra","Bruno Vera","Nahuel Sosa","Julián Costa"];
+  var histTels=["5492284611001","5492284611002","5492284611005","5492284611006","5492284611004"];
+  [64,72,93,100,124,130,158,165,190,196,205,215,225,240,255].forEach(function(off,k){
+    _tur.push({id:uid(),nombre:histNombres[k%5],tel:histTels[k%5],servId:"s1",
+      fecha:atDay(-off,15,0),estado:"realizado",precio:14000});
+  });
   // servicio único "Corte" a precio plano
   _tur.forEach(function(t){ t.servId="s1"; t.precio=14000; });
   write(K.turnos,_tur); }
@@ -1345,33 +1392,33 @@ function delVenta(id){
    BALANCE
    ============================================================ */
 var PERIOD="hoy";
+var HIST_YEAR=null; // año mostrado en el historial (null = año actual)
+function histYear(){ return HIST_YEAR!=null?HIST_YEAR:new Date().getFullYear(); }
 function periodStart(p){
   var d=new Date(); d.setHours(0,0,0,0);
   if(p==="hoy") return d;
   if(p==="semana"){ var wd=(d.getDay()+6)%7; d.setDate(d.getDate()-wd); return d; } // lunes
   if(p==="mes"){ d.setDate(1); return d; }
+  if(p==="anio"){ return new Date(histYear(),0,1); }
   return d;
 }
 function setPeriod(p,btn){
   PERIOD=p;
+  if(p==="anio" && HIST_YEAR==null) HIST_YEAR=new Date().getFullYear();
   document.querySelectorAll("#balSeg button").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
   if(btn) btn.setAttribute("aria-pressed","true");
-  document.getElementById("balLabel").textContent = p==="hoy"?"Hoy":p==="semana"?"Esta semana":"Este mes";
   renderBalance();
 }
-function renderBalance(){
-  var start=periodStart(PERIOD), now=new Date();
-  var inP=function(f){ return f && new Date(f)>=start && new Date(f)<=now; };
-  // --- CORTES: turnos realizados en el período. Los cubiertos por bono VIP suman $0
-  // (esa plata ya entró cuando el cliente pagó la membresía).
+// GANANCIA y desglose para un rango [start, end): reutilizable por el período actual y por cada mes
+function statsPeriodo(start,end){
+  var inP=function(f){ if(!f) return false; var d=new Date(f); return d>=start && d<end; };
+  // Cortes realizados (los cubiertos por bono VIP suman $0: esa plata entró con la membresía)
   var cortesArr=getTurnos().filter(function(t){ return t.estado==="realizado" && inP(t.fecha); });
   var cortes=cortesArr.reduce(function(s,t){return s+(t.vipConsumed?0:(t.precio||0));},0);
-  // --- MEMBRESÍAS VIP: packs pagados en el período (por fecha de alta/renovación).
+  // Membresías VIP pagadas (por fecha de alta/renovación)
   var vipIng=getVIP().filter(function(v){ return inP(v.alta); })
     .reduce(function(s,v){ return s+(v.precio!=null?v.precio:vipPackPrice(v.tipo)); },0);
-  // --- VENTAS: solo lo COBRADO en el período. Contado entra por fecha de venta;
-  // financiadas entran cuota a cuota por fecha de cobro. El costo de las financiadas
-  // se prorratea según lo cobrado. Lo que falta cobrar queda en "Por cobrar".
+  // Ventas COBRADAS: contado por fecha de venta; financiadas cuota a cuota (costo prorrateado)
   var vBruto=0, vCosto=0, ventasN=0;
   getVentas().forEach(function(v){
     if(v.tipo==="financiado" && v.cuotas){
@@ -1381,13 +1428,50 @@ function renderBalance(){
     } else if(inP(v.fecha)){ vBruto+=v.total||0; vCosto+=v.costo||0; ventasN++; }
   });
   var vGan=vBruto-vCosto;
-  // Número grande = GANANCIA real cobrada en el período: cortes + VIP + (ventas cobrado − costo)
-  var ganancia=cortes+vipIng+vGan;
-  var porCobrar=getVentas().reduce(function(s,v){ return s+ventaSaldo(v); },0); // cuotas pendientes
-  set("balBruto",money(ganancia)); set("balCortes",money(cortes)); set("balVip",money(vipIng));
-  set("eqBruto",money(vBruto)); set("eqCosto",money(vCosto)); set("eqGan",money(vGan));
-  set("kCortesN",cortesArr.length); set("kVentasN",ventasN);
-  set("kBruto",money(cortes+vipIng+vBruto)); set("kPorCobrar",money(porCobrar));
+  return {cortes:cortes,cortesN:cortesArr.length,vipIng:vipIng,vBruto:vBruto,vCosto:vCosto,
+    vGan:vGan,ventasN:ventasN,ganancia:cortes+vipIng+vGan};
+}
+function renderBalance(){
+  var now=new Date(), start, end;
+  if(PERIOD==="anio"){
+    var y=histYear();
+    start=new Date(y,0,1);
+    end=new Date(Math.min(now.getTime()+1, new Date(y+1,0,1).getTime())); // hasta hoy, no el futuro
+    set("balLabel", String(y));
+  } else {
+    start=periodStart(PERIOD); end=new Date(now.getTime()+1);
+    set("balLabel", PERIOD==="hoy"?"Hoy":PERIOD==="semana"?"Esta semana":"Este mes");
+  }
+  var st=statsPeriodo(start,end);
+  var porCobrar=getVentas().reduce(function(s,v){ return s+ventaSaldo(v); },0); // cuotas pendientes (global)
+  set("balBruto",money(st.ganancia)); set("balCortes",money(st.cortes)); set("balVip",money(st.vipIng));
+  set("eqBruto",money(st.vBruto)); set("eqCosto",money(st.vCosto)); set("eqGan",money(st.vGan));
+  set("kCortesN",st.cortesN); set("kVentasN",st.ventasN);
+  set("kBruto",money(st.cortes+st.vipIng+st.vBruto)); set("kPorCobrar",money(porCobrar));
+  // historial mes a mes: solo en la vista Año
+  var hist=document.getElementById("anioHist");
+  if(PERIOD==="anio"){ hist.classList.remove("hidden"); renderHistorial(); }
+  else hist.classList.add("hidden");
+}
+function cambiarAnio(n){ HIST_YEAR=histYear()+n; renderBalance(); }
+function renderHistorial(){
+  var y=histYear(), now=new Date();
+  set("histYear", String(y));
+  var meses=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  var vals=[], total=0;
+  for(var m=0;m<12;m++){ var st=statsPeriodo(new Date(y,m,1), new Date(y,m+1,1)); vals.push(st.ganancia); total+=st.ganancia; }
+  var max=Math.max.apply(null, vals.concat([1]));
+  var thisY=now.getFullYear(), thisM=now.getMonth();
+  var bars=vals.map(function(g,m){
+    var futuro=(y>thisY)||(y===thisY && m>thisM);
+    var cls="mbar"+(g<=0?" zero":"")+((y===thisY&&m===thisM)?" actual":"");
+    var pct=max>0?Math.round(g/max*100):0;
+    return '<div class="'+cls+'"><span class="mm">'+meses[m]+'</span>'+
+      '<span class="track">'+(futuro?'':'<span class="fillb" style="width:'+pct+'%"></span>')+'</span>'+
+      '<span class="amt">'+(futuro?'—':money(g))+'</span></div>';
+  }).join("");
+  document.getElementById("histBars").innerHTML=
+    '<div class="histtot"><span class="lbl">Total '+y+'</span><span class="amt">'+money(total)+'</span></div>'+bars;
 }
 
 /* ============================================================
