@@ -307,7 +307,21 @@
   .hday .fr .sep{font-size:11px;color:var(--muted);letter-spacing:.08em}
   .hday .frlbl{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
     margin-right:2px}
-  .hday.off .fr{opacity:.35;pointer-events:none}
+  .hday.off .fr,.hday.off .modebtn{opacity:.35;pointer-events:none}
+  /* botón Corrido / 2 turnos por día */
+  .modebtn{background:transparent;border:1px solid var(--hair);padding:8px 11px;cursor:pointer;
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  .modebtn:hover{border-color:var(--fg);color:var(--fg)}
+  .modebtn[aria-pressed="true"]{border-color:var(--fg);color:var(--fg)}
+  .hday.single .fr2{display:none} /* en modo corrido no se muestra la 2ª franja */
+  /* francos (días puntuales que no corta) */
+  .franco-add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .francos{display:flex;flex-wrap:wrap;gap:8px}
+  .fchip{display:flex;align-items:center;gap:8px;border:1px solid var(--hair-strong);
+    padding:8px 10px 8px 12px;font-size:13px}
+  .fchip .fx{background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:14px;
+    line-height:1;padding:0 2px}
+  .fchip .fx:hover{color:var(--stop)}
 
   /* mensajes */
   .contact{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
@@ -607,8 +621,20 @@
         <div class="card-title">Horarios por día — hasta dos franjas</div>
         <div id="diasBox"></div>
         <p class="muted" style="font-size:12px;margin:12px 2px 0">Tocá el <b>día</b> para abrirlo o
-          cerrarlo. La <b>segunda franja</b> es opcional: dejala vacía si ese día atendés de corrido
-          (ej: lunes 10 a 14 y 16 a 20, martes solo 10 a 20).</p>
+          cerrarlo, y el botón <b>Corrido / 2 turnos</b> para elegir si ese día trabajás de corrido
+          (una sola franja) o partido en dos (ej: lunes 10 a 14 y 16 a 20).</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Francos — días puntuales que no cortás</div>
+        <div class="franco-add">
+          <input type="date" id="francoFecha">
+          <button class="btn btn--sm" onclick="addFranco()">Marcar franco</button>
+        </div>
+        <div id="francosList"></div>
+        <p class="muted" style="font-size:12px;margin:12px 2px 0">Elegí una fecha del calendario y el
+          bot <b>no ofrece turnos</b> ese día. Si ya había turnos agendados, te los muestra para
+          <b>cancelarlos y avisarle a cada cliente</b> por WhatsApp.</p>
       </div>
       <div class="card">
         <div class="card-title">Precio del corte</div>
@@ -710,7 +736,7 @@ var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
 function seed(){
   // Versionado de datos DEMO: al subir DEMO_VER se reemplazan servicios, turnos y ventas
   // guardados por los de ejemplo nuevos (solo etapa demo; se quita al pasar a producción).
-  var DEMO_VER=11;
+  var DEMO_VER=12;
   var demoOld=parseInt(LS.getItem("uni_demover")||"0",10)<DEMO_VER;
   // Un solo servicio: "Corte". El corte es plano, con diseño/barba o no.
   if(!read(K.serv,null) || demoOld) write(K.serv,[
@@ -860,10 +886,13 @@ function seed(){
     write(K.prod,_prods);
     LS.setItem("uni_prodver",String(CATALOGO_VER));
   }
-  // horarios POR DÍA, cada día con hasta DOS franjas (ej: 10-14 y 15-20)
+  // horarios POR DÍA: modo "corrido" (una franja) o "2 turnos" (doble franja, flag doble)
   var defDias=function(){
-    var d={}; for(var i=0;i<7;i++){ var on=(i>=2&&i<=6); // demo: mar-sáb en doble turno
-      d[i]={on:on,f1:on?["10:00","14:00"]:["",""],f2:on?["15:00","20:00"]:["",""]}; }
+    var d={}; for(var i=0;i<7;i++){ var on=(i>=2&&i<=6); // demo: mar-sáb; miércoles de corrido
+      var corrido=(i===3);
+      d[i]={on:on, doble:on&&!corrido,
+        f1:on?(corrido?["10:00","20:00"]:["10:00","14:00"]):["",""],
+        f2:(on&&!corrido)?["15:00","20:00"]:["",""]}; }
     return d;
   };
   // corte 45 + espacio 15 = 60 → los turnos arrancan SIEMPRE en hora en punto (10, 11, 12...)
@@ -879,9 +908,13 @@ function seed(){
     if(demoOld){ _c.dias=defDias(); _c.days=[2,3,4,5,6]; _ch=true; }
     else if(_c.dias==null){ // migrar config vieja: franja única global → por día
       var dd={}; for(var i=0;i<7;i++){ var on=(_c.days||[]).indexOf(i)>-1;
-        dd[i]={on:on,f1:on?[_c.start||"10:00",_c.end||"20:00"]:["",""],f2:["",""]}; }
+        dd[i]={on:on,doble:false,f1:on?[_c.start||"10:00",_c.end||"20:00"]:["",""],f2:["",""]}; }
       _c.dias=dd; _ch=true;
+    } else { // asegurar el flag doble en configs previas
+      for(var k in _c.dias){ var dk=_c.dias[k];
+        if(dk.doble==null){ dk.doble=!!(dk.f2&&dk.f2[0]&&dk.f2[1]); _ch=true; } }
     }
+    if(_c.francos==null){ _c.francos=[]; _ch=true; } // días puntuales que NO corta
     if(_ch) write(K.cfg,_c);
   }
   // próxima ocurrencia (incluye hoy) de un día de semana dado, a tal hora — así los
@@ -1030,17 +1063,21 @@ function getDia(dow){
   var c=getCfg();
   if(c.dias && c.dias[dow]) return c.dias[dow];
   var on=(c.days||[]).indexOf(dow)>-1;
-  return {on:on,f1:on?[c.start||"10:00",c.end||"20:00"]:["",""],f2:["",""]};
+  return {on:on,doble:false,f1:on?[c.start||"10:00",c.end||"20:00"]:["",""],f2:["",""]};
 }
-// franjas válidas del día en minutos: [[ini,fin],...] — vacío si está cerrado
+// franjas válidas del día en minutos: [[ini,fin],...] — vacío si está cerrado.
+// La 2ª franja solo cuenta si el día está en modo "2 turnos" (doble).
 function franjasDia(dow){
   var d=getDia(dow), out=[];
   if(!d.on) return out;
-  [d.f1,d.f2].forEach(function(f){
+  var franjas=d.doble?[d.f1,d.f2]:[d.f1];
+  franjas.forEach(function(f){
     if(f && f[0] && f[1] && toMin(f[1])>toMin(f[0])) out.push([toMin(f[0]),toMin(f[1])]);
   });
   return out;
 }
+// ¿la fecha (YYYY-MM-DD local) está marcada como franco?
+function esFranco(dayIso){ return (getCfg().francos||[]).indexOf(dayIso)>-1; }
 function estadoCls(t){ return (t.estado==="realizado"||t.estado==="confirmado")?"ok":"wait"; }
 
 function turnoRow(t,cls){
@@ -1078,11 +1115,14 @@ function renderTurnos(){
   for(var d=0; d<7; d++){
     var day=new Date(today); day.setDate(today.getDate()+d);
     var dayIso=iso(day);
-    var atiende=franjasDia(day.getDay()).length>0;
+    var franco=esFranco(dayIso);
+    var atiende=!franco && franjasDia(day.getDay()).length>0;
     var turnos=all.filter(function(t){ return iso(new Date(t.fecha))===dayIso; })
       .sort(function(a,b){ return a.fecha<b.fecha?-1:1; });
     var label=(d===0?"Hoy · ":d===1?"Mañana · ":"")+fmtDia(day);
-    var count=turnos.length?turnos.length+(turnos.length===1?" turno":" turnos")+(!atiende?" · cerrado":""):(!atiende?"Cerrado":"Sin turnos");
+    var count=turnos.length
+      ? turnos.length+(turnos.length===1?" turno":" turnos")+(!atiende?(franco?" · franco":" · cerrado"):"")
+      : (franco?"Franco · no cortás":(!atiende?"Cerrado":"Sin turnos"));
     var open=OPEN_DAY===dayIso;
     out+='<div class="dayblock'+(open?" open":"")+'">'+
       '<button class="dayhead" onclick="expandDay(\''+dayIso+'\')">'+
@@ -1092,10 +1132,10 @@ function renderTurnos(){
       // Desplegado: horario completo hora a hora, con o sin turnos
       out+='<div class="dayfull">';
       if(!atiende && !turnos.length){
-        out+='<div class="empty">No atendés este día. (Se cambia en la pestaña Horarios.)</div>';
+        out+='<div class="empty">'+(franco?"Franco: este día no cortás. (Se quita en Horarios.)":"No atendés este día. (Se cambia en la pestaña Horarios.)")+'</div>';
       } else if(!atiende){
-        // día cerrado pero con turnos cargados: mostrarlos igual
-        out+='<div class="empty" style="padding:12px 0 6px;text-align:left">Día marcado como cerrado, pero tiene turnos:</div>';
+        // día cerrado/franco pero con turnos cargados: mostrarlos igual
+        out+='<div class="empty" style="padding:12px 0 6px;text-align:left">'+(franco?"Día marcado como franco, pero tiene turnos:":"Día marcado como cerrado, pero tiene turnos:")+'</div>';
         turnos.forEach(function(t){
           var cls=t.estado==="realizado"?"ok":t.estado==="confirmado"?"ok":"wait";
           out+='<div class="slot"><span class="sh">'+fmtHora(t.fecha)+'</span>'+turnoRow(t,cls)+'</div>';
@@ -1650,16 +1690,18 @@ function renderHorarios(){
   var box=document.getElementById("diasBox");
   box.innerHTML=ORD.map(function(i){
     var d=getDia(i);
-    return '<div class="hday'+(d.on?'':' off')+'" id="hday'+i+'">'+
+    return '<div class="hday'+(d.on?'':' off')+(d.doble?'':' single')+'" id="hday'+i+'">'+
       '<span class="day" role="button" aria-pressed="'+d.on+'" onclick="toggleDia('+i+')">'+DOW[i]+'</span>'+
+      '<button class="modebtn" type="button" aria-pressed="'+(d.doble?"true":"false")+'" onclick="toggleModo('+i+')">'+(d.doble?"2 turnos":"Corrido")+'</button>'+
       '<span class="fr"><span class="frlbl">1ª</span>'+
         '<input type="time" id="d'+i+'f1a" value="'+(d.f1[0]||"")+'"><span class="sep">a</span>'+
         '<input type="time" id="d'+i+'f1b" value="'+(d.f1[1]||"")+'"></span>'+
-      '<span class="fr"><span class="frlbl">2ª</span>'+
+      '<span class="fr fr2"><span class="frlbl">2ª</span>'+
         '<input type="time" id="d'+i+'f2a" value="'+(d.f2[0]||"")+'"><span class="sep">a</span>'+
         '<input type="time" id="d'+i+'f2b" value="'+(d.f2[1]||"")+'"></span>'+
       '</div>';
   }).join("");
+  renderFrancos();
   document.getElementById("h_slot").value=minToHH(c.slotMin||45); // duración como 00:45
   document.getElementById("h_gap").value=minToHH(c.gapMin!=null?c.gapMin:15); // espacio como 00:15
   document.getElementById("h_horizon").value=c.horizonDays||14;
@@ -1671,21 +1713,100 @@ function toggleDia(i){
   chip.setAttribute("aria-pressed", (!on).toString());
   row.classList.toggle("off", on);
 }
+function toggleModo(i){ // Corrido (una franja) ↔ 2 turnos (doble franja)
+  var row=document.getElementById("hday"+i), btn=row.querySelector(".modebtn");
+  var doble=btn.getAttribute("aria-pressed")==="true";
+  var nuevo=!doble;
+  btn.setAttribute("aria-pressed", nuevo.toString());
+  btn.textContent = nuevo?"2 turnos":"Corrido";
+  row.classList.toggle("single", !nuevo);
+  if(nuevo){ // pasar a 2 turnos: si la 2ª franja está vacía, proponer un default
+    if(!val("d"+i+"f2a")) document.getElementById("d"+i+"f2a").value="16:00";
+    if(!val("d"+i+"f2b")) document.getElementById("d"+i+"f2b").value="20:00";
+  }
+}
 function saveHorarios(){
   var dias={}, days=[];
   ORD.forEach(function(i){
     var chip=document.querySelector("#hday"+i+" .day");
+    var mbtn=document.querySelector("#hday"+i+" .modebtn");
     var on=chip.getAttribute("aria-pressed")==="true";
-    dias[i]={on:on, f1:[val("d"+i+"f1a"),val("d"+i+"f1b")], f2:[val("d"+i+"f2a"),val("d"+i+"f2b")]};
+    var doble=mbtn.getAttribute("aria-pressed")==="true";
+    dias[i]={on:on, doble:doble,
+      f1:[val("d"+i+"f1a"),val("d"+i+"f1b")],
+      f2:doble?[val("d"+i+"f2a"),val("d"+i+"f2b")]:["",""]}; // corrido: 2ª franja se descarta
     if(on) days.push(i);
   });
   var c=getCfg();
   var pc=parseInt(val("h_precio")||"0",10)||c.precioCorte||14000; // preservar el precio del corte
-  write(K.cfg,{ days:days, dias:dias, start:c.start||"10:00", end:c.end||"20:00",
+  write(K.cfg,{ days:days, dias:dias, francos:(c.francos||[]), start:c.start||"10:00", end:c.end||"20:00",
     slotMin:(toMin(val("h_slot"))||45), gapMin:toMin(val("h_gap")), horizonDays:parseInt(val("h_horizon")||"14",10), precioCorte:pc });
   write(K.serv, getServ().map(function(s){ if((s.nombre||"").toLowerCase()==="corte") s.precio=pc; return s; }));
   fillSelects(); renderTurnos();
   alert("Horarios guardados. (El bot de turnos leerá esta config.)");
+}
+
+/* ---------- Francos (días puntuales que no corta) ---------- */
+function renderFrancos(){
+  var el=document.getElementById("francosList"); if(!el) return;
+  var f=(getCfg().francos||[]).slice().sort();
+  if(!f.length){ el.innerHTML='<div class="muted" style="font-size:13px">No hay francos marcados.</div>'; return; }
+  el.innerHTML='<div class="francos">'+f.map(function(iso){
+    var d=new Date(iso+"T12:00:00");
+    var txt=d.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"});
+    txt=txt.charAt(0).toUpperCase()+txt.slice(1);
+    return '<span class="fchip">'+txt+'<button class="fx" onclick="removeFranco(\''+iso+'\')" title="Quitar franco">✕</button></span>';
+  }).join("")+'</div>';
+}
+function addFranco(){
+  var f=val("francoFecha");
+  if(!f){ alert("Elegí una fecha del calendario."); return; }
+  var c=getCfg(); c.francos=c.francos||[];
+  if(c.francos.indexOf(f)>-1){ alert("Ese día ya está marcado como franco."); return; }
+  // ¿hay turnos activos ese día? → cancelarlos y avisar a cada cliente
+  var afectados=getTurnos().filter(function(t){
+    return t.estado!=="cancelado" && iso(new Date(t.fecha))===f;
+  });
+  if(afectados.length){
+    var lista=afectados.map(function(t){ return "• "+fmtHora(t.fecha)+" "+t.nombre; }).join("\n");
+    if(!confirm("Ese día ya tenés "+afectados.length+(afectados.length===1?" turno":" turnos")+":\n\n"+lista+
+      "\n\nSi lo marcás como franco se van a CANCELAR y vas a poder avisarle a cada cliente. ¿Seguir?")) return;
+    write(K.turnos, getTurnos().map(function(t){
+      if(t.estado!=="cancelado" && iso(new Date(t.fecha))===f){ t.estado="cancelado"; t.cancelPorFranco=true; }
+      return t;
+    }));
+  }
+  c.francos.push(f); write(K.cfg,c);
+  document.getElementById("francoFecha").value="";
+  renderFrancos(); renderTurnos();
+  if(afectados.length) avisarCancelados(afectados, f);
+}
+function removeFranco(iso){
+  var c=getCfg(); c.francos=(c.francos||[]).filter(function(x){return x!==iso;});
+  write(K.cfg,c); renderFrancos(); renderTurnos();
+}
+// aviso a los clientes de los turnos cancelados por franco (demo: links wa.me con mensaje listo)
+function avisarCancelados(turnos, fechaIso){
+  ["francoAviso","francoLinks"].forEach(function(id){ var o=document.getElementById(id); if(o) o.remove(); });
+  var conTel=turnos.filter(function(t){return t.tel;});
+  var out=document.getElementById("francosList");
+  if(!conTel.length){
+    out.insertAdjacentHTML("afterend",'<div class="banner" id="francoAviso"><span>⚠️</span><span>Se cancelaron '+
+      turnos.length+' turno(s), pero ninguno tenía WhatsApp cargado para avisar.</span></div>');
+    return;
+  }
+  var dtxt=new Date(fechaIso+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit"});
+  var links=conTel.map(function(t){
+    var msg="Hola "+(t.nombre||"").split(" ")[0]+"! Soy de Unibaso Barber. Te tengo que avisar que este "+
+      dtxt+" no voy a estar atendiendo, así que se cancela tu turno de las "+fmtHora(t.fecha)+
+      ". Escribime y lo reprogramamos cuando quieras. ¡Perdón por el inconveniente!";
+    return '<a class="wa" target="_blank" href="https://wa.me/'+t.tel+'?text='+encodeURIComponent(msg)+'">'+
+      (t.nombre||("+"+t.tel))+' →</a>';
+  }).join(" ");
+  ["francoAviso","francoLinks"].forEach(function(id){ var o=document.getElementById(id); if(o) o.remove(); });
+  out.insertAdjacentHTML("afterend",'<div class="banner" id="francoAviso"><span>💬</span><span>'+
+    'Se cancelaron <b>'+turnos.length+'</b> turno(s). Avisales a los clientes (se abre el chat con el mensaje ya escrito):'+
+    '</span></div><div class="row" id="francoLinks" style="margin:-8px 2px 8px;gap:8px">'+links+'</div>');
 }
 
 /* ============================================================
