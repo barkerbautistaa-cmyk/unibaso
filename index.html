@@ -628,13 +628,15 @@
       <div class="card">
         <div class="card-title">Francos — días puntuales que no cortás</div>
         <div class="franco-add">
-          <input type="date" id="francoFecha">
+          <label class="fld">Desde<input type="date" id="francoDesde"></label>
+          <label class="fld">Hasta <span style="text-transform:none;letter-spacing:normal">(opcional)</span><input type="date" id="francoHasta"></label>
           <button class="btn btn--sm" onclick="addFranco()">Marcar franco</button>
         </div>
         <div id="francosList"></div>
-        <p class="muted" style="font-size:12px;margin:12px 2px 0">Elegí una fecha del calendario y el
-          bot <b>no ofrece turnos</b> ese día. Si ya había turnos agendados, te los muestra para
-          <b>cancelarlos y avisarle a cada cliente</b> por WhatsApp.</p>
+        <p class="muted" style="font-size:12px;margin:12px 2px 0">Un <b>día puntual</b>: cargá solo
+          "Desde". Un <b>período</b> (ej: vacaciones): cargá "Desde" y "Hasta". El bot <b>no ofrece
+          turnos</b> en esos días; si ya había turnos, te los muestra para <b>cancelarlos y avisarle a
+          cada cliente</b> por WhatsApp.</p>
       </div>
       <div class="card">
         <div class="card-title">Precio del corte</div>
@@ -1746,47 +1748,67 @@ function saveHorarios(){
   alert("Horarios guardados. (El bot de turnos leerá esta config.)");
 }
 
-/* ---------- Francos (días puntuales que no corta) ---------- */
+/* ---------- Francos (día puntual o rango de fechas que no corta) ---------- */
+// suma n días a una fecha ISO (YYYY-MM-DD) trabajando en horario LOCAL, sin líos de zona
+function isoAdd(isoStr,n){ var d=new Date(isoStr+"T12:00:00"); d.setDate(d.getDate()+n);
+  var m=d.getMonth()+1, day=d.getDate();
+  return d.getFullYear()+"-"+(m<10?"0":"")+m+"-"+(day<10?"0":"")+day; }
+function fmtFrancoDia(isoStr){ var d=new Date(isoStr+"T12:00:00");
+  var t=d.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"});
+  return t.charAt(0).toUpperCase()+t.slice(1); }
+// expande [desde..hasta] inclusive a días individuales (cap de seguridad)
+function rangoDias(desde,hasta){ var out=[], cur=desde, g=0; while(cur<=hasta && g++<400){ out.push(cur); cur=isoAdd(cur,1); } return out; }
+
 function renderFrancos(){
   var el=document.getElementById("francosList"); if(!el) return;
   var f=(getCfg().francos||[]).slice().sort();
   if(!f.length){ el.innerHTML='<div class="muted" style="font-size:13px">No hay francos marcados.</div>'; return; }
-  el.innerHTML='<div class="francos">'+f.map(function(iso){
-    var d=new Date(iso+"T12:00:00");
-    var txt=d.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"});
-    txt=txt.charAt(0).toUpperCase()+txt.slice(1);
-    return '<span class="fchip">'+txt+'<button class="fx" onclick="removeFranco(\''+iso+'\')" title="Quitar franco">✕</button></span>';
+  // agrupar días consecutivos en un solo chip de rango
+  var runs=[], start=f[0], prev=f[0];
+  for(var i=1;i<f.length;i++){
+    if(f[i]===isoAdd(prev,1)){ prev=f[i]; }
+    else { runs.push([start,prev]); start=f[i]; prev=f[i]; }
+  }
+  runs.push([start,prev]);
+  el.innerHTML='<div class="francos">'+runs.map(function(r){
+    var txt = r[0]===r[1] ? fmtFrancoDia(r[0]) : (fmtFrancoDia(r[0])+' → '+fmtFrancoDia(r[1]));
+    return '<span class="fchip">'+txt+'<button class="fx" onclick="removeFranco(\''+r[0]+'\',\''+r[1]+'\')" title="Quitar">✕</button></span>';
   }).join("")+'</div>';
 }
 function addFranco(){
-  var f=val("francoFecha");
-  if(!f){ alert("Elegí una fecha del calendario."); return; }
+  var desde=val("francoDesde"), hasta=val("francoHasta")||desde;
+  if(!desde){ alert("Elegí al menos la fecha 'Desde'."); return; }
+  if(hasta<desde){ var t=desde; desde=hasta; hasta=t; } // por si los cargan al revés
   var c=getCfg(); c.francos=c.francos||[];
-  if(c.francos.indexOf(f)>-1){ alert("Ese día ya está marcado como franco."); return; }
-  // ¿hay turnos activos ese día? → cancelarlos y avisar a cada cliente
+  var nuevos=rangoDias(desde,hasta).filter(function(d){ return c.francos.indexOf(d)<0; });
+  if(!nuevos.length){ alert("Ese período ya estaba marcado como franco."); return; }
+  // turnos activos dentro del rango → cancelar y avisar
   var afectados=getTurnos().filter(function(t){
-    return t.estado!=="cancelado" && iso(new Date(t.fecha))===f;
+    return t.estado!=="cancelado" && nuevos.indexOf(iso(new Date(t.fecha)))>-1;
   });
   if(afectados.length){
-    var lista=afectados.map(function(t){ return "• "+fmtHora(t.fecha)+" "+t.nombre; }).join("\n");
-    if(!confirm("Ese día ya tenés "+afectados.length+(afectados.length===1?" turno":" turnos")+":\n\n"+lista+
-      "\n\nSi lo marcás como franco se van a CANCELAR y vas a poder avisarle a cada cliente. ¿Seguir?")) return;
+    var lista=afectados.slice(0,10).map(function(t){ return "• "+fmtDia(t.fecha)+" "+fmtHora(t.fecha)+" "+t.nombre; }).join("\n")+
+      (afectados.length>10?"\n…y "+(afectados.length-10)+" más":"");
+    if(!confirm("En ese período tenés "+afectados.length+(afectados.length===1?" turno":" turnos")+":\n\n"+lista+
+      "\n\nSe van a CANCELAR y vas a poder avisarle a cada cliente. ¿Seguir?")) return;
     write(K.turnos, getTurnos().map(function(t){
-      if(t.estado!=="cancelado" && iso(new Date(t.fecha))===f){ t.estado="cancelado"; t.cancelPorFranco=true; }
+      if(t.estado!=="cancelado" && nuevos.indexOf(iso(new Date(t.fecha)))>-1){ t.estado="cancelado"; t.cancelPorFranco=true; }
       return t;
     }));
   }
-  c.francos.push(f); write(K.cfg,c);
-  document.getElementById("francoFecha").value="";
+  nuevos.forEach(function(d){ c.francos.push(d); }); write(K.cfg,c);
+  document.getElementById("francoDesde").value=""; document.getElementById("francoHasta").value="";
   renderFrancos(); renderTurnos();
-  if(afectados.length) avisarCancelados(afectados, f);
+  if(afectados.length) avisarCancelados(afectados);
 }
-function removeFranco(iso){
-  var c=getCfg(); c.francos=(c.francos||[]).filter(function(x){return x!==iso;});
+function removeFranco(desde,hasta){
+  var quitar={}; rangoDias(desde,hasta||desde).forEach(function(d){ quitar[d]=1; });
+  var c=getCfg(); c.francos=(c.francos||[]).filter(function(x){ return !quitar[x]; });
   write(K.cfg,c); renderFrancos(); renderTurnos();
 }
-// aviso a los clientes de los turnos cancelados por franco (demo: links wa.me con mensaje listo)
-function avisarCancelados(turnos, fechaIso){
+// aviso a los clientes de los turnos cancelados por franco (demo: links wa.me con mensaje listo).
+// Cada mensaje usa la fecha propia del turno (sirve para rangos de varios días).
+function avisarCancelados(turnos){
   ["francoAviso","francoLinks"].forEach(function(id){ var o=document.getElementById(id); if(o) o.remove(); });
   var conTel=turnos.filter(function(t){return t.tel;});
   var out=document.getElementById("francosList");
@@ -1795,15 +1817,14 @@ function avisarCancelados(turnos, fechaIso){
       turnos.length+' turno(s), pero ninguno tenía WhatsApp cargado para avisar.</span></div>');
     return;
   }
-  var dtxt=new Date(fechaIso+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit"});
   var links=conTel.map(function(t){
+    var dtxt=new Date(t.fecha).toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit"});
     var msg="Hola "+(t.nombre||"").split(" ")[0]+"! Soy de Unibaso Barber. Te tengo que avisar que este "+
       dtxt+" no voy a estar atendiendo, así que se cancela tu turno de las "+fmtHora(t.fecha)+
       ". Escribime y lo reprogramamos cuando quieras. ¡Perdón por el inconveniente!";
     return '<a class="wa" target="_blank" href="https://wa.me/'+t.tel+'?text='+encodeURIComponent(msg)+'">'+
       (t.nombre||("+"+t.tel))+' →</a>';
   }).join(" ");
-  ["francoAviso","francoLinks"].forEach(function(id){ var o=document.getElementById(id); if(o) o.remove(); });
   out.insertAdjacentHTML("afterend",'<div class="banner" id="francoAviso"><span>💬</span><span>'+
     'Se cancelaron <b>'+turnos.length+'</b> turno(s). Avisales a los clientes (se abre el chat con el mensaje ya escrito):'+
     '</span></div><div class="row" id="francoLinks" style="margin:-8px 2px 8px;gap:8px">'+links+'</div>');
