@@ -766,13 +766,76 @@ window.UNIBASO_PROMO_WEBHOOK = ""; // n8n → WhatsApp Cloud API (envío masivo 
 var LS = window.localStorage;
 var K = { cfg:"uni_cfg", serv:"uni_serv", prod:"uni_prod", turnos:"uni_turnos", ventas:"uni_ventas", vip:"uni_vip", clientes:"uni_clientes" };
 var read = function(k,f){ try{ var v=JSON.parse(LS.getItem(k)); return v==null?f:v; }catch(e){ return f; } };
-var write = function(k,v){ LS.setItem(k, JSON.stringify(v)); };
+var write = function(k,v){ LS.setItem(k, JSON.stringify(v)); if(typeof cloudPush==="function") cloudPush(k,v); };
 var uid = function(){ return "u"+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36); };
 var money = function(n){ return "$ "+ (n||0).toLocaleString("es-AR"); }; // espacio no separable: el $ nunca queda solo en otra línea
 var atDay = function(off,h,m){ var d=new Date(); d.setDate(d.getDate()+off); d.setHours(h,m||0,0,0); return d.toISOString(); };
 var justNow = function(){ return new Date().toISOString(); }; // cobro "de hoy" para el demo (siempre <= ahora)
 var iso = function(d){ var z=new Date(d.getTime()-d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); }; // fecha LOCAL, no UTC
 var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
+
+/* ============================================================
+   MODO NUBE (opcional) — Firebase Firestore
+   ------------------------------------------------------------
+   Mientras CLOUD_CFG sea null, el panel funciona 100% en modo
+   DEMO (localStorage) igual que siempre. Al pegar la config del
+   proyecto Firebase, el mismo panel pasa a leer/escribir en la
+   nube y comparte datos con el bot (n8n) en tiempo real.
+   Cada colección (K.*) se guarda como un documento:
+     barberias/{BARBERIA_ID}/estado/{clave}  ->  { v: <datos>, t: <ts> }
+   ============================================================ */
+var CLOUD_CFG = null;          // ← pegar aquí el objeto firebaseConfig para activar la nube
+var BARBERIA_ID = "unibaso";   // id de esta barbería dentro del proyecto (permite multi-cliente)
+var CLOUD = { on:false, fs:null, db:null };
+
+async function cloudInit(){
+  if(!CLOUD_CFG) return false;
+  try{
+    var appMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+    var fs     = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    var app = appMod.initializeApp(CLOUD_CFG);
+    CLOUD.db = fs.getFirestore(app);
+    CLOUD.fs = fs;
+    CLOUD.on = true;
+    await cloudPullAll();   // baja todo al cache local una vez
+    cloudSubscribe();       // escucha cambios del bot / otro dispositivo
+    return true;
+  }catch(e){ console.warn("cloudInit falló, sigo en modo local:", e); CLOUD.on=false; return false; }
+}
+function cloudDoc(key){ return CLOUD.fs.doc(CLOUD.db, "barberias", BARBERIA_ID, "estado", key); }
+async function cloudPullAll(){
+  var keys = Object.keys(K).map(function(k){ return K[k]; });
+  for(var i=0;i<keys.length;i++){
+    try{ var snap = await CLOUD.fs.getDoc(cloudDoc(keys[i]));
+      if(snap.exists() && snap.data().v!=null) LS.setItem(keys[i], JSON.stringify(snap.data().v));
+    }catch(e){ console.warn("pull", keys[i], e); }
+  }
+}
+function cloudSubscribe(){
+  Object.keys(K).map(function(k){ return K[k]; }).forEach(function(key){
+    CLOUD.fs.onSnapshot(cloudDoc(key), function(snap){
+      if(!snap.exists() || snap.metadata.hasPendingWrites) return; // ignorar el eco de mi propia escritura
+      if(snap.data().v==null) return;
+      LS.setItem(key, JSON.stringify(snap.data().v));
+      if(typeof rerenderAll==="function") rerenderAll();
+    }, function(e){ console.warn("subscribe", key, e); });
+  });
+}
+var cloudQueue = Promise.resolve();
+function cloudPush(key,val){
+  if(!CLOUD.on) return;
+  cloudQueue = cloudQueue.then(function(){
+    return CLOUD.fs.setDoc(cloudDoc(key), { v: val, t: Date.now() });
+  }).catch(function(e){ console.warn("cloud push", key, e); });
+}
+function rerenderAll(){
+  try{ fillSelects(); renderTurnos(); renderVentas(); renderVIP(); renderClientes();
+       renderHorarios(); renderBalance(); renderStock(); renderContacts(); }catch(e){}
+}
+function startApp(){
+  if(CLOUD_CFG){ cloudInit().then(boot).catch(function(){ boot(); }); }
+  else boot();
+}
 
 /* ---------- Semillas (solo la primera vez) ---------- */
 function seed(){
@@ -1060,7 +1123,7 @@ function login(){
     LS.setItem("uni_auth","1");
     document.getElementById("gate").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
-    boot();
+    startApp();
   } else { alert("Clave incorrecta."); }
 }
 function logout(){ LS.removeItem("uni_auth"); location.reload(); }
@@ -2045,7 +2108,8 @@ function fillSelects(){
   ["t_fecha","vp_alta"].forEach(function(i){ var e=document.getElementById(i); if(e&&!e.value) e.value=today; });
 }
 function boot(){
-  seed(); fillSelects();
+  if(!CLOUD.on) seed();   // en modo nube no sembramos demo: los datos son reales
+  fillSelects();
   renderTurnos(); renderVentas(); renderVIP(); renderClientes(); renderHorarios(); renderBalance();
 }
 /* cerrar el menú de 3 puntitos al hacer click en cualquier otro lado */
@@ -2054,6 +2118,6 @@ document.addEventListener("click",function(){ closeTurnoMenus(); });
 if(LS.getItem("uni_auth")==="1"){
   document.getElementById("gate").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
-  boot();
+  startApp();
 }
 </script>
