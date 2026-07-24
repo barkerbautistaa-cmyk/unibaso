@@ -784,8 +784,10 @@ var daysBetween = function(a,b){ return Math.floor((b-a)/86400000); };
    Cada colección (K.*) se guarda como un documento:
      barberias/{BARBERIA_ID}/estado/{clave}  ->  { v: <datos>, t: <ts> }
    ============================================================ */
-var CLOUD_CFG = null;          // ← pegar aquí el objeto firebaseConfig para activar la nube
+var CLOUD_CFG = null;
 var BARBERIA_ID = "unibaso";   // id de esta barbería dentro del proyecto (permite multi-cliente)
+// Seguridad: el demo público (GitHub Pages) NUNCA debe conectar a la base real.
+if(location.hostname.indexOf("github.io")>-1) CLOUD_CFG=null;
 var CLOUD = { on:false, fs:null, db:null };
 
 async function cloudInit(){
@@ -841,7 +843,7 @@ function startApp(){
 function seed(){
   // Versionado de datos DEMO: al subir DEMO_VER se reemplazan servicios, turnos y ventas
   // guardados por los de ejemplo nuevos (solo etapa demo; se quita al pasar a producción).
-  var DEMO_VER=13;
+  var DEMO_VER=14;
   var demoOld=parseInt(LS.getItem("uni_demover")||"0",10)<DEMO_VER;
   // Un solo servicio: "Corte". El corte es plano, con diseño/barba o no.
   if(!read(K.serv,null) || demoOld) write(K.serv,[
@@ -1030,27 +1032,27 @@ function seed(){
     // Martes: 4 turnos (uno realizado, para ver el botón Borrar) — SIEMPRE en hora en punto
     {id:uid(),nombre:"Martín Ríos",tel:"5492284611001",servId:"s1",fecha:nextDow(2,10,0),estado:"realizado",precio:14000},
     {id:uid(),nombre:"Lucas Ferreyra",tel:"5492284611002",servId:"s1",fecha:nextDow(2,11,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Ezequiel Paz",tel:"5492284611003",servId:"s1",fecha:nextDow(2,12,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Ezequiel Paz",tel:"5492284611003",servId:"s1",fecha:nextDow(2,12,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Franco Díaz",tel:"5492284611009",servId:"s1",fecha:nextDow(2,13,0),estado:"confirmado",precio:14000},
     // Miércoles: un solo turno
     {id:uid(),nombre:"Tomás Vidal",tel:"5492284611007",servId:"s1",fecha:nextDow(3,16,0),estado:"confirmado",precio:14000},
     // Jueves: 3 turnos
     {id:uid(),nombre:"Iván Molina",tel:"5492284611008",servId:"s1",fecha:nextDow(4,10,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s1",fecha:nextDow(4,11,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s1",fecha:nextDow(4,11,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Bruno Vera",tel:"5492284611005",servId:"s1",fecha:nextDow(4,12,0),estado:"confirmado",precio:14000},
     // Viernes: 5 turnos
     {id:uid(),nombre:"Nahuel Sosa",tel:"5492284611006",servId:"s1",fecha:nextDow(5,10,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Agustín Rey",tel:"5492284611010",servId:"s1",fecha:nextDow(5,11,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Marcos Peña",tel:"5492284611011",servId:"s1",fecha:nextDow(5,12,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Marcos Peña",tel:"5492284611011",servId:"s1",fecha:nextDow(5,12,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Santi López",tel:"5492284611012",servId:"s1",fecha:nextDow(5,13,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Facu Torres",tel:"5492284611013",servId:"s1",fecha:nextDow(5,15,0),estado:"confirmado",precio:14000},
     // Sábado: 3 turnos
     {id:uid(),nombre:"Pedro Aguirre",tel:"5492284611014",servId:"s1",fecha:nextDow(6,10,0),estado:"confirmado",precio:14000},
     {id:uid(),nombre:"Leo Núñez",tel:"5492284611015",servId:"s1",fecha:nextDow(6,11,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Dylan Soto",tel:"5492284611016",servId:"s1",fecha:nextDow(6,12,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Dylan Soto",tel:"5492284611016",servId:"s1",fecha:nextDow(6,12,0),estado:"confirmado",precio:14000},
     // turnos a más de 7 días (aparecen en "Más adelante", debajo del acordeón semanal)
     {id:uid(),nombre:"Lautaro Vega",tel:"5492284611017",servId:"s1",fecha:atDay(10,11,0),estado:"confirmado",precio:14000},
-    {id:uid(),nombre:"Ramiro Duarte",tel:"5492284611018",servId:"s1",fecha:atDay(16,16,0),estado:"pendiente",precio:14000},
+    {id:uid(),nombre:"Ramiro Duarte",tel:"5492284611018",servId:"s1",fecha:atDay(16,16,0),estado:"confirmado",precio:14000},
     // realizados anteriores (historial para filtros de Mensajes y balance)
     {id:uid(),nombre:"Martín Ríos",tel:"5492284611001",servId:"s1",fecha:atDay(-12,17,0),estado:"realizado",precio:8000},
     {id:uid(),nombre:"Julián Costa",tel:"5492284611004",servId:"s2",fecha:atDay(-8,18,0),estado:"realizado",precio:10000},
@@ -1339,7 +1341,7 @@ function addTurno(){
   var s=getServ().find(function(x){return x.id===servId});
   var dt=new Date(fecha+"T"+hora);
   var arr=getTurnos();
-  arr.push({id:uid(),nombre:nombre,tel:tel,servId:servId,fecha:dt.toISOString(),estado:"pendiente",precio:s?s.precio:0});
+  arr.push({id:uid(),nombre:nombre,tel:tel,servId:servId,fecha:dt.toISOString(),estado:"confirmado",precio:s?s.precio:0});
   write(K.turnos,arr);
   upsertCliente(nombre,tel); // el cliente entra a la cartera
   ["t_nombre","t_tel"].forEach(function(i){document.getElementById(i).value="";});
